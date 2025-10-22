@@ -188,6 +188,23 @@ model NotificationLog {
 }
 
 // ============================================================================
+// WAITLIST MODELS
+// ============================================================================
+
+/// Waitlist model - stores early signups before launch
+model Waitlist {
+  id              String   @id @default(uuid())
+  email           String   @unique
+  name            String
+  graduationDate  String   @map("graduation_date") // YYYY-MM format
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([email])
+  @@index([createdAt])
+  @@map("waitlist")
+}
+
+// ============================================================================
 // ENUMS
 // ============================================================================
 
