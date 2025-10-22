@@ -1,0 +1,218 @@
+// InternMatch Database Schema
+// This schema defines the data model for the InternMatch platform
+// Provider: PostgreSQL for production-ready relational data storage
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// USER MODELS
+// ============================================================================
+
+/// Core user model integrated with Clerk authentication
+/// One-to-one relationship with UserProfile for extended user data
+model User {
+  id        String   @id @default(uuid())
+  clerkId   String   @unique @map("clerk_id") // Clerk user ID for auth integration
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  profile           UserProfile?
+  matches           Match[]
+  notificationLogs  NotificationLog[]
+
+  @@index([clerkId]) // Fast lookups by Clerk ID
+  @@index([email]) // Fast lookups by email
+  @@map("users")
+}
+
+/// Extended user profile with resume data and preferences
+/// Contains all information needed for job matching
+model UserProfile {
+  id                    String    @id @default(uuid())
+  userId                String    @unique @map("user_id")
+
+  // Academic Information
+  graduationDate        DateTime  @map("graduation_date") // When the student graduates
+  degreeLevel           DegreeLevel @map("degree_level")
+  gpa                   Decimal?  @db.Decimal(3, 2) // e.g., 3.75 (optional)
+  major                 String?   // e.g., "Computer Science"
+  university            String?   // e.g., "MIT"
+
+  // Skills & Experience
+  skills                String[]  // Array of skills (e.g., ["Python", "React", "SQL"])
+  projects              Json      @default("[]") // Array of {name, description, techStack[], url?}
+  experience            Json      @default("[]") // Array of {company, role, durationMonths, description}
+
+  // Work Authorization
+  workAuthorization     WorkAuthorization @map("work_authorization")
+
+  // Preferences
+  locationPreferences   String[]  @default([]) @map("location_preferences") // ["Remote", "San Francisco", "New York"]
+  minMatchScore         Int       @default(75) @map("min_match_score") // Only notify for matches >= this score
+  notificationsPaused   Boolean   @default(false) @map("notifications_paused")
+  lastNotificationSent  DateTime? @map("last_notification_sent")
+
+  // Resume Storage
+  resumeUrl             String?   @map("resume_url") // URL to stored resume file
+  resumeLastParsed      DateTime? @map("resume_last_parsed") // When resume was last parsed
+
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([graduationDate]) // For filtering by grad year
+  @@map("user_profiles")
+}
+
+// ============================================================================
+// JOB MODELS
+// ============================================================================
+
+/// Job posting model - stores scraped internship opportunities
+/// Unique constraint on (source, sourceId) prevents duplicates
+model Job {
+  id                    String    @id @default(uuid())
+
+  // Basic Job Information
+  company               String
+  title                 String
+  location              String[]  // Array of locations (e.g., ["Remote", "San Francisco, CA"])
+  description           String    @db.Text
+  requirements          String    @db.Text // Raw requirements text
+  applyUrl              String    @map("apply_url")
+
+  // Metadata
+  source                String    // e.g., "github", "simplify", "linkedin"
+  sourceId              String    @map("source_id") // Unique ID from the source
+  postedDate            DateTime  @map("posted_date")
+  scrapedAt             DateTime  @default(now()) @map("scraped_at") // When we discovered it
+
+  // Eligibility Criteria (parsed from requirements)
+  applicationDeadline   DateTime? @map("application_deadline")
+  requiredGradYear      Int?      @map("required_grad_year") // e.g., 2025, 2026
+  degreeRequirement     DegreeLevel? @map("degree_requirement")
+  sponsorshipAvailable  Boolean?  @map("sponsorship_available") // null if unknown
+  requiredSkills        String[]  @default([]) @map("required_skills") // Extracted skills
+
+  // Status
+  isActive              Boolean   @default(true) @map("is_active") // false if posting expired
+
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  matches Match[]
+
+  @@unique([source, sourceId]) // Prevent duplicate jobs from same source
+  @@index([isActive, postedDate]) // For fetching active jobs sorted by date
+  @@index([company]) // For filtering by company
+  @@index([requiredGradYear]) // For filtering by grad year
+  @@map("jobs")
+}
+
+// ============================================================================
+// MATCHING MODELS
+// ============================================================================
+
+/// Match model - represents a user-job pair with scoring
+/// Created by matching algorithm, used for notifications
+model Match {
+  id                String      @id @default(uuid())
+  userId            String      @map("user_id")
+  jobId             String      @map("job_id")
+
+  // Matching Results
+  matchScore        Int         @map("match_score") // 0-100 score
+  matchingSkills    String[]    @map("matching_skills") // Skills that matched
+  suggestions       String      @db.Text // What to highlight in application
+
+  // User Actions
+  status            MatchStatus @default(NEW)
+  notificationSent  Boolean     @default(false) @map("notification_sent")
+  viewedAt          DateTime?   @map("viewed_at")
+  appliedAt         DateTime?   @map("applied_at")
+  dismissedAt       DateTime?   @map("dismissed_at")
+
+  createdAt         DateTime    @default(now()) @map("created_at")
+  updatedAt         DateTime    @updatedAt @map("updated_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job  Job  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, jobId]) // One match per user-job pair
+  @@index([userId, createdAt]) // For fetching user's recent matches
+  @@index([userId, status]) // For filtering by status (NEW, VIEWED, etc.)
+  @@index([userId, matchScore]) // For sorting by score
+  @@index([notificationSent]) // For finding unsent notifications
+  @@map("matches")
+}
+
+// ============================================================================
+// NOTIFICATION MODELS
+// ============================================================================
+
+/// Notification log - tracks emails sent to users
+/// Used for analytics and preventing duplicate notifications
+model NotificationLog {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+
+  jobIds    String[] @map("job_ids") // Jobs included in this notification batch
+  sentAt    DateTime @default(now()) @map("sent_at")
+
+  // Tracking
+  opened    Boolean  @default(false) // Email opened (tracked via pixel)
+  clicked   Boolean  @default(false) // Link clicked
+  openedAt  DateTime? @map("opened_at")
+  clickedAt DateTime? @map("clicked_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, sentAt]) // For fetching user's notification history
+  @@map("notification_logs")
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum DegreeLevel {
+  BACHELOR
+  MASTER
+  PHD
+
+  @@map("degree_level")
+}
+
+enum WorkAuthorization {
+  US_CITIZEN
+  GREEN_CARD
+  NEEDS_VISA
+  NEEDS_SPONSORSHIP
+
+  @@map("work_authorization")
+}
+
+enum MatchStatus {
+  NEW       // Just created, not viewed
+  VIEWED    // User viewed the match
+  APPLIED   // User applied to the job
+  DISMISSED // User dismissed the match
+
+  @@map("match_status")
+}
