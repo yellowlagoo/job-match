@@ -63,11 +63,11 @@ export async function parseResume(resumeText: string): Promise<ParsedResume> {
 
   try {
     console.log(
-      '[Parser] Calling Groq API with model: llama-3.1-70b-versatile'
+      '[Parser] Calling Groq API with model: llama-3.3-70b-versatile'
     );
 
     const completion = await groq.chat.completions.create({
-      model: 'llama-3.1-70b-versatile',
+      model: 'llama-3.3-70b-versatile',
       messages: [
         {
           role: 'system',

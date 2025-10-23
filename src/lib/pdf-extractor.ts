@@ -1,205 +1,259 @@
 /**
- * PDF Text Extraction using Mozilla PDF.js
- * This implementation is compatible with Next.js 14 App Router and serverless environments
+ * PDF Text Extraction Service - Production Grade
+ *
+ * Uses unpdf library for reliable text extraction in Next.js serverless environment.
+ * This library works without worker files and is compatible with Next.js bundling.
  */
 
-import * as pdfjsLib from 'pdfjs-dist';
-import type { TextItem } from 'pdfjs-dist/types/src/display/api';
+import { extractText } from 'unpdf';
 
-// Configure PDF.js worker - disable worker for Node.js environment
-if (typeof window === 'undefined') {
-  // Server-side: disable worker
-  pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+/**
+ * Validation result for PDF files
+ */
+interface ValidationResult {
+  valid: boolean;
+  error?: string;
 }
 
 /**
- * Validates that the uploaded file is a valid PDF
+ * Validates PDF file before processing
+ *
+ * @param file - File object to validate
+ * @returns Validation result with error message if invalid
  */
-export function validatePDFFile(file: File): {
-  valid: boolean;
-  error?: string;
-} {
-  console.log('[PDF Validator] Validating file:', file.name);
+export function validatePDFFile(file: File | null): ValidationResult {
+  console.log('[Validator] Starting validation...');
 
   if (!file) {
-    return { valid: false, error: 'No file provided' };
-  }
-
-  if (
-    file.type !== 'application/pdf' &&
-    !file.name.toLowerCase().endsWith('.pdf')
-  ) {
+    console.error('[Validator] No file provided');
     return {
       valid: false,
-      error: `Invalid file type: ${file.type || 'unknown'}. Only PDF files are supported.`,
+      error: 'No file provided. Please select a PDF file.',
     };
   }
 
-  const maxSize = 10 * 1024 * 1024; // 10MB
+  console.log('[Validator] File details:', {
+    name: file.name,
+    type: file.type,
+    size: file.size,
+    lastModified: new Date(file.lastModified).toISOString(),
+  });
+
+  // Check file type
+  if (file.type !== 'application/pdf') {
+    console.error('[Validator] Invalid file type:', file.type);
+    return {
+      valid: false,
+      error: `Invalid file type: ${file.type}. Only PDF files are supported.`,
+    };
+  }
+
+  // Check file size (10MB limit)
+  const maxSize = 10 * 1024 * 1024; // 10MB in bytes
   if (file.size > maxSize) {
+    const sizeMB = (file.size / 1024 / 1024).toFixed(2);
+    console.error('[Validator] File too large:', file.size, 'bytes');
     return {
       valid: false,
-      error: `File too large: ${(file.size / (1024 * 1024)).toFixed(2)}MB. Maximum size is 10MB.`,
+      error: `File too large (${sizeMB}MB). Maximum size is 10MB. Please compress your PDF.`,
     };
   }
 
+  // Check minimum file size
   if (file.size < 100) {
-    return { valid: false, error: 'File appears to be empty or corrupted' };
+    console.error('[Validator] File too small:', file.size, 'bytes');
+    return {
+      valid: false,
+      error:
+        'File appears to be empty or corrupted. Please try a different PDF.',
+    };
   }
 
-  console.log('[PDF Validator] ✓ Validation passed');
+  console.log('[Validator] ✓ Validation passed');
   return { valid: true };
 }
 
 /**
- * Extracts text content from a PDF file using PDF.js
- * @param file - The PDF file to extract text from
- * @returns The extracted text content
- * @throws Error if extraction fails
+ * Extracts text content from a PDF file
+ *
+ * @param file - PDF file to extract text from
+ * @returns Promise resolving to extracted text
+ * @throws Error if extraction fails with detailed message
  */
 export async function extractTextFromPDF(file: File): Promise<string> {
-  console.log('[PDF Extractor] Starting extraction for:', file.name);
-  console.log(
-    '[PDF Extractor] File size:',
-    (file.size / 1024).toFixed(2),
-    'KB'
-  );
+  const startTime = Date.now();
+  const context = {
+    fileName: file.name,
+    fileSize: file.size,
+    fileType: file.type,
+  };
+
+  console.log('[PDF Extractor] ========== STARTING EXTRACTION ==========');
+  console.log('[PDF Extractor] Context:', context);
 
   try {
-    // Convert File to ArrayBuffer
-    console.log('[PDF Extractor] Converting file to ArrayBuffer...');
-    const arrayBuffer = await file.arrayBuffer();
-    const uint8Array = new Uint8Array(arrayBuffer);
-
-    console.log('[PDF Extractor] Loading PDF document...');
-
-    // Load PDF document
-    const loadingTask = pdfjsLib.getDocument({
-      data: uint8Array,
-      useSystemFonts: true,
-      standardFontDataUrl: undefined,
-    });
-
-    const pdfDocument = await loadingTask.promise;
-
-    const numPages = pdfDocument.numPages;
-    console.log(
-      `[PDF Extractor] ✓ PDF loaded successfully. Pages: ${numPages}`
-    );
-
-    if (numPages === 0) {
-      throw new Error('PDF has no pages');
+    // Step 1: Convert File to ArrayBuffer
+    console.log('[PDF Extractor] Step 1: Converting file to ArrayBuffer...');
+    let arrayBuffer: ArrayBuffer;
+    try {
+      arrayBuffer = await file.arrayBuffer();
+      console.log(
+        '[PDF Extractor] ✓ ArrayBuffer created:',
+        arrayBuffer.byteLength,
+        'bytes'
+      );
+    } catch (error) {
+      console.error('[PDF Extractor] ArrayBuffer conversion failed:', error);
+      throw new Error(
+        `Failed to read PDF file: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     }
 
-    if (numPages > 10) {
+    if (!arrayBuffer || arrayBuffer.byteLength === 0) {
+      throw new Error('PDF file is empty or could not be read');
+    }
+
+    // Step 2: Extract text using unpdf
+    console.log('[PDF Extractor] Step 2: Extracting text with unpdf...');
+    let result: { totalPages: number; text: string };
+    try {
+      const uint8Array = new Uint8Array(arrayBuffer);
+      console.log(
+        '[PDF Extractor] Uint8Array created:',
+        uint8Array.length,
+        'bytes'
+      );
+
+      // Use extractText with mergePages: true to get a single string
+      result = await extractText(uint8Array, { mergePages: true });
+
+      const extractionTime = Date.now() - startTime;
+      console.log('[PDF Extractor] ✓ Text extracted in', extractionTime, 'ms');
+      console.log('[PDF Extractor] Total pages:', result.totalPages);
+      console.log('[PDF Extractor] Raw text length:', result.text?.length || 0);
+    } catch (error) {
+      console.error('[PDF Extractor] Text extraction failed:', error);
+      if (error instanceof Error) {
+        console.error('[PDF Extractor] Error name:', error.name);
+        console.error('[PDF Extractor] Error message:', error.message);
+        console.error('[PDF Extractor] Error stack:', error.stack);
+      }
+      throw new Error(
+        `Failed to extract text from PDF: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+
+    // Step 3: Validate extracted text
+    console.log('[PDF Extractor] Step 3: Validating extracted text...');
+
+    if (result.text === null || result.text === undefined) {
+      throw new Error('Extraction returned null or undefined');
+    }
+
+    if (typeof result.text !== 'string') {
+      throw new Error(
+        `Extraction returned invalid type: ${typeof result.text}`
+      );
+    }
+
+    const trimmedText = result.text.trim();
+    console.log('[PDF Extractor] Trimmed text length:', trimmedText.length);
+    console.log(
+      '[PDF Extractor] Text preview (first 200 chars):',
+      trimmedText.substring(0, 200)
+    );
+
+    if (trimmedText.length === 0) {
+      throw new Error(
+        'No text could be extracted from the PDF. ' +
+          'This may be a scanned document or image-based PDF. ' +
+          'Please ensure your resume is a text-based PDF.'
+      );
+    }
+
+    if (trimmedText.length < 100) {
       console.warn(
-        `[PDF Extractor] ⚠️ Warning: PDF has ${numPages} pages. This may take longer to process.`
+        '[PDF Extractor] Text is very short:',
+        trimmedText.length,
+        'characters'
+      );
+      throw new Error(
+        `Extracted text is too short (${trimmedText.length} characters). ` +
+          'The PDF may be corrupted, image-based, or not contain sufficient text. ' +
+          'Please try a different PDF.'
       );
     }
 
-    // Extract text from all pages
-    const textPromises: Promise<string>[] = [];
-
-    for (let pageNum = 1; pageNum <= numPages; pageNum++) {
-      textPromises.push(extractPageText(pdfDocument, pageNum));
-    }
-
-    console.log(`[PDF Extractor] Extracting text from ${numPages} pages...`);
-    const pagesText = await Promise.all(textPromises);
-
-    // Combine all page text with page separators
-    const fullText = pagesText.join('\n\n--- Page Break ---\n\n');
-
-    console.log('[PDF Extractor] ✓ Text extraction completed');
-    console.log('[PDF Extractor] Total characters extracted:', fullText.length);
+    const totalTime = Date.now() - startTime;
+    console.log('[PDF Extractor] ========== EXTRACTION SUCCESSFUL ==========');
+    console.log('[PDF Extractor] Total time:', totalTime, 'ms');
     console.log(
-      '[PDF Extractor] Text preview:',
-      fullText.substring(0, 200).replace(/\n/g, ' ') + '...'
+      '[PDF Extractor] Final text length:',
+      trimmedText.length,
+      'characters'
+    );
+    console.log(
+      '[PDF Extractor] Characters per second:',
+      Math.round(trimmedText.length / (totalTime / 1000))
     );
 
-    // Validate extracted text
-    if (!fullText || fullText.trim().length === 0) {
-      throw new Error(
-        'No text could be extracted from this PDF. It may be image-based or scanned. Please use a text-based PDF.'
-      );
-    }
-
-    if (fullText.length < 50) {
-      throw new Error(
-        'Extracted text is too short. The PDF may be mostly images or have no extractable text. Please use a text-based PDF.'
-      );
-    }
-
-    // Clean up the document
-    pdfDocument.destroy();
-
-    return fullText;
+    return trimmedText;
   } catch (error) {
-    console.error('[PDF Extractor] ❌ Extraction failed:', error);
+    const totalTime = Date.now() - startTime;
+    console.error('[PDF Extractor] ========== EXTRACTION FAILED ==========');
+    console.error('[PDF Extractor] Time until failure:', totalTime, 'ms');
+    console.error('[PDF Extractor] Context:', context);
+    console.error('[PDF Extractor] Error type:', error?.constructor?.name);
+    console.error('[PDF Extractor] Error:', error);
 
     if (error instanceof Error) {
-      // Handle specific PDF.js errors
-      if (error.message.includes('Invalid PDF')) {
-        throw new Error(
-          'Invalid or corrupted PDF file. Please ensure the file is a valid PDF and try again.'
-        );
-      }
+      console.error('[PDF Extractor] Error.name:', error.name);
+      console.error('[PDF Extractor] Error.message:', error.message);
+      console.error('[PDF Extractor] Error.stack:', error.stack);
+    }
 
-      if (error.message.includes('password')) {
-        throw new Error(
-          'This PDF is password-protected. Please remove the password and try again.'
-        );
-      }
+    console.error('[PDF Extractor] ========== END ERROR ==========');
 
-      // Re-throw our custom errors
+    // Re-throw with user-friendly message
+    if (error instanceof Error) {
+      // If it's already a user-friendly error, keep it
       if (
-        error.message.includes('no text') ||
-        error.message.includes('image-based') ||
-        error.message.includes('too short')
+        error.message.includes('scanned document') ||
+        error.message.includes('too short') ||
+        error.message.includes('corrupted') ||
+        error.message.includes('No text could be extracted')
       ) {
         throw error;
       }
 
-      throw new Error(`PDF text extraction failed: ${error.message}`);
+      // Otherwise wrap with generic message
+      throw new Error(
+        `PDF text extraction failed: ${error.message}. ` +
+          'Please ensure your PDF is not corrupted and try again.'
+      );
     }
 
-    throw new Error('PDF text extraction failed: Unknown error');
+    throw new Error(
+      'PDF text extraction failed due to an unknown error. ' +
+        'Please try a different PDF file.'
+    );
   }
 }
 
 /**
- * Extracts text from a single PDF page
- * @param pdfDocument - The loaded PDF document
- * @param pageNum - The page number (1-indexed)
- * @returns The extracted text from the page
+ * Gets basic metadata about a PDF file without full extraction
+ * Useful for validation and logging
  */
-async function extractPageText(
-  pdfDocument: Awaited<ReturnType<typeof pdfjsLib.getDocument>['promise']>,
-  pageNum: number
-): Promise<string> {
-  try {
-    console.log(`[PDF Extractor] Processing page ${pageNum}...`);
-
-    const page = await pdfDocument.getPage(pageNum);
-    const textContent = await page.getTextContent();
-
-    // Extract text items and join them
-    const textItems = textContent.items
-      .filter((item): item is TextItem => 'str' in item)
-      .map((item) => item.str);
-
-    const pageText = textItems.join(' ');
-
-    console.log(
-      `[PDF Extractor] ✓ Page ${pageNum} extracted: ${pageText.length} characters`
-    );
-
-    return pageText;
-  } catch (error) {
-    console.error(
-      `[PDF Extractor] ❌ Failed to extract page ${pageNum}:`,
-      error
-    );
-    throw new Error(`Failed to extract text from page ${pageNum}`);
-  }
+export async function getPDFMetadata(file: File): Promise<{
+  name: string;
+  size: number;
+  type: string;
+  sizeFormatted: string;
+}> {
+  return {
+    name: file.name,
+    size: file.size,
+    type: file.type,
+    sizeFormatted: `${(file.size / 1024).toFixed(2)}KB`,
+  };
 }
