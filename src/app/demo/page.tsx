@@ -221,6 +221,11 @@ export default function DemoPage() {
   const [isParsing, setIsParsing] = useState(false);
   const [parsedData, setParsedData] = useState<ParsedResume | null>(null);
   const [showMatches, setShowMatches] = useState(false);
+  const [error, setError] = useState<{
+    message: string;
+    details?: string;
+  } | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<string>('');
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -229,24 +234,105 @@ export default function DemoPage() {
   };
 
   const handleUpload = async (uploadedFile: File) => {
+    console.log('[Upload] File selected:', {
+      name: uploadedFile.name,
+      size: uploadedFile.size,
+      type: uploadedFile.type,
+      sizeInMB: (uploadedFile.size / (1024 * 1024)).toFixed(2) + 'MB',
+    });
+
+    // Reset previous state
+    setError(null);
+    setParsedData(null);
+    setShowMatches(false);
     setIsParsing(true);
+
+    // Client-side validation
+    console.log('[Upload] Performing client-side validation...');
+
+    if (!uploadedFile.type.includes('pdf')) {
+      console.warn('[Upload] ❌ Validation failed: Invalid file type');
+      setError({
+        message: 'Invalid file type',
+        details: 'Please upload a PDF file (.pdf)',
+      });
+      setIsParsing(false);
+      return;
+    }
+
+    if (uploadedFile.size > 10 * 1024 * 1024) {
+      console.warn('[Upload] ❌ Validation failed: File too large');
+      setError({
+        message: 'File too large',
+        details: `File must be under 10MB. Your file is ${(uploadedFile.size / (1024 * 1024)).toFixed(2)}MB`,
+      });
+      setIsParsing(false);
+      return;
+    }
+
+    if (uploadedFile.size === 0) {
+      console.warn('[Upload] ❌ Validation failed: Empty file');
+      setError({
+        message: 'Empty file',
+        details: 'The selected file is empty. Please choose a valid PDF.',
+      });
+      setIsParsing(false);
+      return;
+    }
+
+    console.log('[Upload] ✓ Client-side validation passed');
 
     const formData = new FormData();
     formData.append('resume', uploadedFile);
 
     try {
+      console.log('[Upload] Starting API call to /api/parse-resume');
+      setUploadProgress('Uploading resume...');
+
       const response = await fetch('/api/parse-resume', {
         method: 'POST',
         body: formData,
       });
 
+      console.log('[Upload] API response received:', {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+      });
+
+      setUploadProgress('Processing response...');
+
+      const data = await response.json();
+      console.log('[Upload] Response data:', data);
+
       if (response.ok) {
-        const data = await response.json();
+        console.log('[Upload] ✓ Upload successful');
+        setUploadProgress('Parsing complete!');
         setParsedData(data);
-        setTimeout(() => setShowMatches(true), 500);
+        setTimeout(() => {
+          setShowMatches(true);
+          setUploadProgress('');
+        }, 500);
+      } else {
+        // Handle error responses
+        console.error('[Upload] ❌ API returned error:', data);
+        setError({
+          message: data.error || 'Upload failed',
+          details:
+            data.details || 'An unexpected error occurred. Please try again.',
+        });
+        setUploadProgress('');
       }
     } catch (error) {
-      console.error('Parse error:', error);
+      console.error('[Upload] ❌ Network or parsing error:', error);
+      setError({
+        message: 'Connection failed',
+        details:
+          error instanceof Error
+            ? error.message
+            : 'Could not connect to the server. Please check your connection and try again.',
+      });
+      setUploadProgress('');
     } finally {
       setIsParsing(false);
     }
@@ -296,23 +382,12 @@ export default function DemoPage() {
                 </p>
               </div>
 
-              {!parsedData ? (
-                <label
-                  htmlFor="resume-upload"
-                  onDragOver={handleDragOver}
-                  onDrop={handleDrop}
-                  className="block cursor-pointer border-2 border-dashed border-border p-12 text-center transition-colors hover:border-muted-foreground"
-                >
-                  <input
-                    id="resume-upload"
-                    type="file"
-                    accept=".pdf"
-                    className="hidden"
-                    onChange={handleFileChange}
-                  />
-                  <div className="space-y-3">
+              {/* Error Display */}
+              {error && (
+                <div className="border-2 border-red-500/20 bg-red-500/5 p-4">
+                  <div className="flex items-start gap-3">
                     <svg
-                      className="mx-auto h-8 w-8 text-muted-foreground"
+                      className="h-5 w-5 flex-shrink-0 text-red-500"
                       fill="none"
                       viewBox="0 0 24 24"
                       stroke="currentColor"
@@ -320,18 +395,105 @@ export default function DemoPage() {
                       <path
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        strokeWidth={1.5}
-                        d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                        strokeWidth={2}
+                        d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
                       />
                     </svg>
+                    <div className="flex-1 space-y-1">
+                      <p className="text-sm font-medium text-red-500">
+                        {error.message}
+                      </p>
+                      {error.details && (
+                        <p className="text-xs text-red-500/80">
+                          {error.details}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => setError(null)}
+                      className="text-red-500/60 transition-colors hover:text-red-500"
+                    >
+                      <svg
+                        className="h-4 w-4"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M6 18L18 6M6 6l12 12"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {!parsedData ? (
+                <label
+                  htmlFor="resume-upload"
+                  onDragOver={handleDragOver}
+                  onDrop={handleDrop}
+                  className={`block cursor-pointer border-2 border-dashed p-12 text-center transition-colors ${
+                    isParsing
+                      ? 'border-accent/50 bg-accent/5'
+                      : 'border-border hover:border-muted-foreground'
+                  }`}
+                >
+                  <input
+                    id="resume-upload"
+                    type="file"
+                    accept=".pdf"
+                    className="hidden"
+                    onChange={handleFileChange}
+                    disabled={isParsing}
+                  />
+                  <div className="space-y-3">
+                    {isParsing ? (
+                      <svg
+                        className="mx-auto h-8 w-8 animate-spin text-accent"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        />
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        />
+                      </svg>
+                    ) : (
+                      <svg
+                        className="mx-auto h-8 w-8 text-muted-foreground"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={1.5}
+                          d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                        />
+                      </svg>
+                    )}
                     <div>
                       <p className="text-sm text-secondary">
                         {isParsing
-                          ? 'Parsing resume...'
+                          ? uploadProgress || 'Parsing resume...'
                           : 'Drop your resume here or click to browse'}
                       </p>
                       <p className="text-tertiary mt-1 text-xs">
-                        PDF only, max 5MB
+                        PDF only, max 10MB
                       </p>
                     </div>
                   </div>
