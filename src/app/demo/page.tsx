@@ -2,25 +2,8 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-
-interface ParsedResume {
-  name: string;
-  email: string;
-  graduationDate: string;
-  degree: string;
-  skills: string[];
-  experience: Array<{
-    company: string;
-    role: string;
-    duration: string;
-  }>;
-  projects: Array<{
-    name: string;
-    description: string;
-    tech: string[];
-  }>;
-  gpa: string | null;
-}
+import type { ParsedResume } from '@/services/resume-parser';
+import type { SkillsAnalysis } from '@/types/analysis';
 
 interface Job {
   company: string;
@@ -220,6 +203,9 @@ function MatchBadge({ score }: { score: number }) {
 export default function DemoPage() {
   const [isParsing, setIsParsing] = useState(false);
   const [parsedData, setParsedData] = useState<ParsedResume | null>(null);
+  const [skillsAnalysis, setSkillsAnalysis] = useState<SkillsAnalysis | null>(
+    null
+  );
   const [showMatches, setShowMatches] = useState(false);
   const [error, setError] = useState<{
     message: string;
@@ -244,6 +230,7 @@ export default function DemoPage() {
     // Reset previous state
     setError(null);
     setParsedData(null);
+    setSkillsAnalysis(null);
     setShowMatches(false);
     setIsParsing(true);
 
@@ -303,12 +290,25 @@ export default function DemoPage() {
       setUploadProgress('Processing response...');
 
       const data = await response.json();
-      console.log('[Upload] Response data:', data);
+      console.log('[Upload] API Response:', data);
+      console.log('[Upload] Parsed Resume:', data.parsedResume);
+      console.log('[Upload] Skills Analysis:', data.skillsAnalysis);
 
       if (response.ok) {
         console.log('[Upload] ✓ Upload successful');
         setUploadProgress('Parsing complete!');
-        setParsedData(data);
+
+        // Extract parsed resume and skills analysis from response
+        if (data.parsedResume) {
+          setParsedData(data.parsedResume);
+          console.log('[Upload] ✓ Parsed resume data set');
+        }
+
+        if (data.skillsAnalysis) {
+          setSkillsAnalysis(data.skillsAnalysis);
+          console.log('[Upload] ✓ Skills analysis data set');
+        }
+
         setTimeout(() => {
           setShowMatches(true);
           setUploadProgress('');
@@ -507,14 +507,20 @@ export default function DemoPage() {
                 <div className="flex items-start justify-between">
                   <div className="space-y-1">
                     <h3 className="font-semibold text-foreground">
-                      {parsedData.name}
+                      {parsedData.name || 'Unknown Name'}
                     </h3>
-                    <p className="text-sm text-secondary">{parsedData.email}</p>
+                    <p className="text-sm text-secondary">
+                      {parsedData.email || 'No email provided'}
+                    </p>
                   </div>
                   <div className="text-right">
-                    <p className="text-tertiary text-xs">{parsedData.degree}</p>
                     <p className="text-tertiary text-xs">
-                      Graduating {parsedData.graduationDate}
+                      {parsedData.degree || 'Not specified'}
+                    </p>
+                    <p className="text-tertiary text-xs">
+                      {parsedData.graduationDate
+                        ? `Graduating ${parsedData.graduationDate}`
+                        : 'Graduation date not specified'}
                     </p>
                   </div>
                 </div>
@@ -524,18 +530,24 @@ export default function DemoPage() {
                     Skills
                   </p>
                   <div className="flex flex-wrap gap-2">
-                    {parsedData.skills.map((skill, i) => (
-                      <span
-                        key={i}
-                        className="border border-border bg-muted px-2 py-1 text-xs text-foreground"
-                      >
-                        {skill}
-                      </span>
-                    ))}
+                    {parsedData.skills && parsedData.skills.length > 0 ? (
+                      parsedData.skills.map((skill, i) => (
+                        <span
+                          key={i}
+                          className="border border-border bg-muted px-2 py-1 text-xs text-foreground"
+                        >
+                          {skill}
+                        </span>
+                      ))
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        No skills found
+                      </p>
+                    )}
                   </div>
                 </div>
 
-                {parsedData.experience.length > 0 && (
+                {parsedData.experience && parsedData.experience.length > 0 && (
                   <div className="space-y-3">
                     <p className="text-tertiary text-xs font-medium uppercase tracking-wide">
                       Experience
@@ -558,6 +570,221 @@ export default function DemoPage() {
                     </div>
                   </div>
                 )}
+
+                {parsedData.projects && parsedData.projects.length > 0 && (
+                  <div className="space-y-3">
+                    <p className="text-tertiary text-xs font-medium uppercase tracking-wide">
+                      Projects
+                    </p>
+                    <div className="space-y-3">
+                      {parsedData.projects.map((project, i) => (
+                        <div key={i} className="space-y-1">
+                          <p className="text-sm font-medium text-foreground">
+                            {project.name}
+                          </p>
+                          <p className="text-sm text-secondary">
+                            {project.description}
+                          </p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {project.tech?.map((tech, j) => (
+                              <span key={j} className="text-tertiary text-xs">
+                                {tech}
+                                {j < project.tech.length - 1 && ' •'}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Skills Analysis Display */}
+            {skillsAnalysis && (
+              <div className="animate-fade-in space-y-6">
+                <div className="space-y-2">
+                  <h2 className="text-2xl font-semibold text-foreground">
+                    Skills Analysis
+                  </h2>
+                  <p className="text-sm text-secondary">
+                    How your resume matches the target role
+                  </p>
+                </div>
+
+                {/* Overall Fit Section */}
+                {skillsAnalysis.overallFit && (
+                  <div className="border border-border bg-accent/5 p-6">
+                    <h3 className="text-tertiary mb-2 text-xs font-medium uppercase tracking-wide">
+                      Overall Assessment
+                    </h3>
+                    <p className="text-sm text-secondary">
+                      {skillsAnalysis.overallFit}
+                    </p>
+                  </div>
+                )}
+
+                {/* Aligned Skills Section */}
+                {skillsAnalysis.alignedSkills &&
+                  skillsAnalysis.alignedSkills.length > 0 && (
+                    <div className="space-y-4 border border-border p-6">
+                      <h3 className="text-tertiary text-xs font-medium uppercase tracking-wide">
+                        Matching Skills ({skillsAnalysis.alignedSkills.length})
+                      </h3>
+                      <div className="space-y-3">
+                        {skillsAnalysis.alignedSkills.map((skill, i) => (
+                          <div
+                            key={i}
+                            className="border-success/50 bg-success/5 flex items-start justify-between gap-4 border-l-2 py-2 pl-4 pr-3"
+                          >
+                            <div className="flex-1 space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium text-foreground">
+                                  {skill.skill}
+                                </span>
+                                <span className="text-tertiary text-xs">
+                                  from {skill.matchedFrom}
+                                </span>
+                              </div>
+                              {skill.evidence && (
+                                <p className="text-xs text-secondary">
+                                  {skill.evidence}
+                                </p>
+                              )}
+                            </div>
+                            <span
+                              className={`text-xs font-medium ${
+                                skill.relevance === 'high'
+                                  ? 'text-success'
+                                  : skill.relevance === 'medium'
+                                    ? 'text-accent'
+                                    : 'text-muted-foreground'
+                              }`}
+                            >
+                              {skill.relevance}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                {/* Missing Skills Section */}
+                {skillsAnalysis.missingSkills &&
+                  skillsAnalysis.missingSkills.length > 0 && (
+                    <div className="space-y-4 border border-border p-6">
+                      <h3 className="text-tertiary text-xs font-medium uppercase tracking-wide">
+                        Skills to Develop ({skillsAnalysis.missingSkills.length}
+                        )
+                      </h3>
+                      <div className="space-y-2">
+                        {skillsAnalysis.missingSkills.map((skill, i) => (
+                          <div
+                            key={i}
+                            className="flex items-center justify-between gap-4 border-l-2 border-muted-foreground/30 bg-muted/30 py-2 pl-4 pr-3"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm text-foreground">
+                                {skill.skill}
+                              </span>
+                              <span className="text-tertiary text-xs">
+                                {skill.category}
+                              </span>
+                            </div>
+                            <span
+                              className={`text-xs font-medium ${
+                                skill.priority === 'required'
+                                  ? 'text-red-500'
+                                  : skill.priority === 'preferred'
+                                    ? 'text-accent'
+                                    : 'text-muted-foreground'
+                              }`}
+                            >
+                              {skill.priority}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                {/* Strengths to Highlight Section */}
+                {skillsAnalysis.strengthsToHighlight &&
+                  skillsAnalysis.strengthsToHighlight.length > 0 && (
+                    <div className="space-y-4 border border-border p-6">
+                      <h3 className="text-tertiary text-xs font-medium uppercase tracking-wide">
+                        Strengths to Highlight (
+                        {skillsAnalysis.strengthsToHighlight.length})
+                      </h3>
+                      <div className="space-y-4">
+                        {skillsAnalysis.strengthsToHighlight.map(
+                          (strength, i) => (
+                            <div key={i} className="space-y-2">
+                              <h4 className="text-sm font-semibold text-foreground">
+                                {strength.title}
+                              </h4>
+                              <p className="text-sm text-secondary">
+                                {strength.description}
+                              </p>
+                              <div className="flex items-start gap-2 border-l-2 border-accent/50 bg-accent/5 py-1.5 pl-3">
+                                <span className="text-xs font-medium text-accent">
+                                  →
+                                </span>
+                                <p className="text-xs text-secondary">
+                                  {strength.impact}
+                                </p>
+                              </div>
+                            </div>
+                          )
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                {/* Improvement Suggestions Section */}
+                {skillsAnalysis.improvementSuggestions &&
+                  skillsAnalysis.improvementSuggestions.length > 0 && (
+                    <div className="space-y-4 border border-border p-6">
+                      <h3 className="text-tertiary text-xs font-medium uppercase tracking-wide">
+                        Recommendations (
+                        {skillsAnalysis.improvementSuggestions.length})
+                      </h3>
+                      <div className="space-y-4">
+                        {skillsAnalysis.improvementSuggestions.map(
+                          (suggestion, i) => (
+                            <div
+                              key={i}
+                              className="space-y-2 border-l-2 border-accent/50 py-1 pl-4"
+                            >
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className={`text-xs font-medium ${
+                                    suggestion.priority === 'high'
+                                      ? 'text-red-500'
+                                      : suggestion.priority === 'medium'
+                                        ? 'text-accent'
+                                        : 'text-muted-foreground'
+                                  }`}
+                                >
+                                  {suggestion.priority.toUpperCase()}
+                                </span>
+                                <span className="text-tertiary text-xs">
+                                  {suggestion.category}
+                                </span>
+                              </div>
+                              <p className="text-sm font-medium text-foreground">
+                                {suggestion.suggestion}
+                              </p>
+                              <p className="text-xs italic text-secondary">
+                                {suggestion.rationale}
+                              </p>
+                            </div>
+                          )
+                        )}
+                      </div>
+                    </div>
+                  )}
               </div>
             )}
 

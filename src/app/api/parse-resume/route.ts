@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { extractTextFromPDF, validatePDFFile } from '@/lib/pdf-extractor';
 import { parseResume } from '@/services/resume-parser';
 import { ParsedResume } from '@/services/resume-parser';
+import { analyzeSkills } from '@/services/skills-analyzer';
+import type { JobListing, SkillsAnalysis } from '@/types/analysis';
 
 /**
  * API Route: Parse Resume
@@ -20,6 +22,32 @@ export const maxDuration = 60;
  */
 function generateRequestId(): string {
   return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
+/**
+ * Mock job listing for demonstration
+ * TODO: Replace with actual job listing from database based on user selection
+ */
+function getMockJobListing(): JobListing {
+  return {
+    company: 'Stripe',
+    title: 'Software Engineer Intern',
+    location: 'San Francisco, CA',
+    description:
+      'We are looking for a talented Software Engineer Intern to join our team. You will work on building scalable payment infrastructure and developer tools.',
+    requirements:
+      'Strong programming skills in React, TypeScript, and Python. Experience with web development, APIs, and payment systems is a plus. Graduating in 2025 or 2026.',
+    requiredSkills: [
+      'React',
+      'TypeScript',
+      'Python',
+      'REST APIs',
+      'Web Development',
+      'Git',
+      'Problem Solving',
+      'System Design',
+    ],
+  };
 }
 
 /**
@@ -42,7 +70,7 @@ export async function POST(req: NextRequest) {
 
   try {
     // ==================== STEP 1: ENVIRONMENT VALIDATION ====================
-    console.log(`[API:${requestId}] Step 1/5: Validating environment...`);
+    console.log(`[API:${requestId}] Step 1/6: Validating environment...`);
     if (!process.env.GROQ_API_KEY) {
       console.error(`[API:${requestId}] CRITICAL: GROQ_API_KEY is not set`);
       return NextResponse.json(
@@ -58,7 +86,7 @@ export async function POST(req: NextRequest) {
     console.log(`[API:${requestId}] ✓ Step 1 complete - Environment valid`);
 
     // ==================== STEP 2: PARSE FORMDATA ====================
-    console.log(`[API:${requestId}] Step 2/5: Parsing FormData...`);
+    console.log(`[API:${requestId}] Step 2/6: Parsing FormData...`);
     let formData: FormData;
     try {
       formData = await req.formData();
@@ -82,7 +110,7 @@ export async function POST(req: NextRequest) {
     console.log(`[API:${requestId}] ✓ Step 2 complete - FormData parsed`);
 
     // ==================== STEP 3: VALIDATE FILE ====================
-    console.log(`[API:${requestId}] Step 3/5: Validating file...`);
+    console.log(`[API:${requestId}] Step 3/6: Validating file...`);
     const validation = validatePDFFile(file);
     if (!validation.valid) {
       console.warn(`[API:${requestId}] Validation failed:`, validation.error);
@@ -99,7 +127,7 @@ export async function POST(req: NextRequest) {
     console.log(`[API:${requestId}] ✓ Step 3 complete - File validated`);
 
     // ==================== STEP 4: EXTRACT TEXT FROM PDF ====================
-    console.log(`[API:${requestId}] Step 4/5: Extracting text from PDF...`);
+    console.log(`[API:${requestId}] Step 4/6: Extracting text from PDF...`);
     const extractionStartTime = Date.now();
     let extractedText: string;
     try {
@@ -122,7 +150,7 @@ export async function POST(req: NextRequest) {
     console.log(`[API:${requestId}] ✓ Step 4 complete - Text extracted`);
 
     // ==================== STEP 5: PARSE WITH GROQ AI ====================
-    console.log(`[API:${requestId}] Step 5/5: Parsing with Groq AI...`);
+    console.log(`[API:${requestId}] Step 5/6: Parsing with Groq AI...`);
     const parsingStartTime = Date.now();
     let parsedData: ParsedResume;
     try {
@@ -143,13 +171,55 @@ export async function POST(req: NextRequest) {
     }
     console.log(`[API:${requestId}] ✓ Step 5 complete - Resume parsed`);
 
+    // ==================== STEP 6: ANALYZE SKILLS ====================
+    console.log(
+      `[API:${requestId}] Step 6/6: Analyzing skills against job requirements...`
+    );
+    const analysisStartTime = Date.now();
+    let skillsAnalysis: SkillsAnalysis;
+    try {
+      const jobListing = getMockJobListing();
+      console.log(
+        `[API:${requestId}] Target job:`,
+        `${jobListing.title} at ${jobListing.company}`
+      );
+
+      skillsAnalysis = await analyzeSkills(parsedData, jobListing);
+      const analysisTime = Date.now() - analysisStartTime;
+      console.log(
+        `[API:${requestId}] Skills analysis completed in ${analysisTime}ms`
+      );
+      console.log(`[API:${requestId}] Analysis results:`, {
+        alignedSkills: skillsAnalysis.alignedSkills.length,
+        missingSkills: skillsAnalysis.missingSkills.length,
+        strengths: skillsAnalysis.strengthsToHighlight.length,
+        suggestions: skillsAnalysis.improvementSuggestions.length,
+      });
+    } catch (error) {
+      console.error(`[API:${requestId}] Skills analysis failed:`, error);
+      // Don't throw - return partial results with null analysis
+      // This allows the user to still see their parsed resume
+      skillsAnalysis = {
+        alignedSkills: [],
+        missingSkills: [],
+        strengthsToHighlight: [],
+        improvementSuggestions: [],
+        overallFit: 'Skills analysis unavailable at this time.',
+      };
+      console.warn(
+        `[API:${requestId}] Continuing with empty analysis due to error`
+      );
+    }
+    console.log(`[API:${requestId}] ✓ Step 6 complete - Skills analyzed`);
+
     // ==================== SUCCESS ====================
     const totalTime = Date.now() - startTime;
     console.log(`[API:${requestId}] ========== REQUEST SUCCESSFUL ==========`);
     console.log(`[API:${requestId}] Total time: ${totalTime}ms`);
 
     return NextResponse.json({
-      ...parsedData,
+      parsedResume: parsedData,
+      skillsAnalysis: skillsAnalysis,
       _meta: {
         requestId,
         processingTime: totalTime,
@@ -172,8 +242,9 @@ export async function POST(req: NextRequest) {
     );
     console.error(`[API:${requestId}] Error instance checks:`, {
       isError: error instanceof Error,
-      hasMessage: 'message' in (error || {}),
-      hasStack: 'stack' in (error || {}),
+      hasMessage:
+        error != null && typeof error === 'object' && 'message' in error,
+      hasStack: error != null && typeof error === 'object' && 'stack' in error,
     });
     console.error(`[API:${requestId}] Full error:`, error);
     console.error(`[API:${requestId}] Error toString:`, String(error));
@@ -224,12 +295,13 @@ export async function POST(req: NextRequest) {
         details = error.message;
         statusCode = 500;
       }
-      // Groq API errors
+      // Groq API errors (resume parsing or skills analysis)
       else if (
         error.message.includes('Groq') ||
-        error.message.includes('API')
+        error.message.includes('API') ||
+        error.message.includes('Skills analysis failed')
       ) {
-        errorMessage = 'AI parsing failed';
+        errorMessage = 'AI processing failed';
         details = 'The AI service encountered an error. Please try again.';
         statusCode = 503;
       }
