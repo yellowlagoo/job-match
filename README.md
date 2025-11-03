@@ -4,7 +4,7 @@
 
 ## Overview
 
-InternMatch is a production-ready MVP that helps computer science students find relevant software engineering internships. The platform analyzes resumes, scrapes job postings daily, and sends email notifications only when new, high-quality matches are found.
+InternMatch is a production-ready MVP that helps computer science students find relevant software engineering internships. Once fully built the platform analyzes resumes, scrapes job postings daily, and sends email notifications only when new, high-quality matches are found. Currently it can analyze resumes and extract skills plus ways to strengthen skills / resume.
 
 ### Key Features
 
