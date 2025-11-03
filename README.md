@@ -8,7 +8,7 @@ JobMatch is a production-ready MVP that helps computer science students find rel
 
 ### Key Features
 
-- **Resume Parsing**: AI-powered resume analysis using Groq
+- **Resume Parsing**: AI-powered resume analysis using Groq - built
 - **Smart Matching**: Skills-based matching algorithm with eligibility filtering
 - **Daily Job Scraping**: Automated job discovery from GitHub internship repositories
 - **Email Notifications**: Timely alerts for new matches (configurable threshold)
