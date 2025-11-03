@@ -1,14 +1,14 @@
-# InternMatch - AI-Powered Internship Matching Platform
+# JobMatch - AI-Powered Internship Matching Platform
 
 > Automatically match CS students with relevant SWE internship opportunities using AI-powered resume parsing and smart matching algorithms.
 
 ## Overview
 
-InternMatch is a production-ready MVP that helps computer science students find relevant software engineering internships. Once fully built the platform analyzes resumes, scrapes job postings daily, and sends email notifications only when new, high-quality matches are found. Currently it can analyze resumes and extract skills plus ways to strengthen skills / resume.
+JobMatch is a production-ready MVP that helps computer science students find relevant software engineering internships. Once fully built the platform analyzes resumes, scrapes job postings daily, and sends email notifications only when new, high-quality matches are found. Currently it can analyze resumes and extract skills plus ways to strengthen skills / resume.
 
 ### Key Features
 
-- **Resume Parsing**: AI-powered resume analysis using Groq / Claude
+- **Resume Parsing**: AI-powered resume analysis using Groq
 - **Smart Matching**: Skills-based matching algorithm with eligibility filtering
 - **Daily Job Scraping**: Automated job discovery from GitHub internship repositories
 - **Email Notifications**: Timely alerts for new matches (configurable threshold)
