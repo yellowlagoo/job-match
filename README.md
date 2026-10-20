@@ -4,14 +4,14 @@
 
 ## Overview
 
-JobMatch is a production-ready MVP that helps computer science students find relevant software engineering internships. Once fully built the platform analyzes resumes, scrapes job postings daily, and sends email notifications only when new, high-quality matches are found. Currently it can analyze resumes and extract skills plus ways to strengthen skills / resume.
+JobMatch is a project that helps computer science students find relevant software engineering internships. Once fully built the platform analyzes resumes, scrapes job postings daily, and sends email notifications only when new, high-quality matches are found. Currently it can analyze resumes and extract skills plus ways to strengthen skills / resume.
 
-### Key Features
+### Key Features 
 
 - **Resume Parsing**: AI-powered resume analysis using Groq - built
 - **Smart Matching**: Skills-based matching algorithm with eligibility filtering
-- **Daily Job Scraping**: Automated job discovery from GitHub internship repositories
-- **Email Notifications**: Timely alerts for new matches (configurable threshold)
+- **Daily Job Scraping**: (to be built) Automated job discovery from GitHub internship repositories
+- **Email Notifications**: (to be built) Timely alerts for new matches (configurable threshold)
 - **Dashboard**: Clean interface to view and manage matches
 - **User Profiles**: Comprehensive profiles with skills, projects, and preferences
 
